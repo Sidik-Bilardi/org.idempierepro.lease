@@ -1,0 +1,5 @@
+syntax: glob
+*.class
+*.DS_Store
+src/org/fixedasset/component/AssetDocEvent.java.orig
+bin/org/fixedasset/component/AssetDocEvent.java.orig

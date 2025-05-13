@@ -1,0 +1,268 @@
+/******************************************************************************
+ * Product: iDempiere Free ERP Project based on Compiere (2006)               *
+ * Copyright (C) 2014 Redhuan D. Oon All Rights Reserved.                     *
+ * This program is free software; you can redistribute it and/or modify it    *
+ * under the terms version 2 of the GNU General Public License as published   *
+ * by the Free Software Foundation. This program is distributed in the hope   *
+ * that it will be useful, but WITHOUT ANY WARRANTY; without even the implied *
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.           *
+ * See the GNU General Public License for more details.                       *
+ * You should have received a copy of the GNU General Public License along    *
+ * with this program; if not, write to the Free Software Foundation, Inc.,    *
+ * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.                     *
+ *  FOR NON-COMMERCIAL DEVELOPER USE ONLY                                     *
+ *  @author Redhuan D. Oon  - red1@red1.org  www.red1.org  www.sysnova.com    *
+ *****************************************************************************/
+
+package org.fixedasset.component;
+
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+
+import org.adempiere.base.event.AbstractEventHandler;
+import org.adempiere.base.event.IEventTopics;
+import org.adempiere.exceptions.AdempiereException;
+import org.compiere.model.MAsset;
+import org.compiere.model.MAssetAddition;
+import org.compiere.model.MAssetGroup;
+import org.compiere.model.MClient;
+import org.compiere.model.MConversionType;
+import org.compiere.model.MInvoice;
+import org.compiere.model.MInvoiceLine;
+import org.compiere.model.MProduct;
+import org.compiere.model.MProductCategory;
+import org.compiere.model.MTax;
+import org.compiere.model.PO;
+import org.compiere.model.Query;
+import org.compiere.util.CLogger;
+import org.compiere.util.DB;
+import org.compiere.util.Env;
+import org.fixedasset.process.EventGeneral;
+import org.osgi.service.event.Event;
+
+public class AssetDocEvent extends AbstractEventHandler{
+	private static CLogger log = CLogger.getCLogger(AssetDocEvent.class);
+	private String trxName = "";
+	private PO po = null;
+	private String m_processMsg = ""; 
+	private Event event;
+	@Override
+	protected void initialize() { 
+		// Event
+		registerTableEvent(IEventTopics.PO_AFTER_NEW, MProduct.Table_Name); 
+		registerTableEvent(IEventTopics.PO_AFTER_CHANGE, MProduct.Table_Name); 
+		registerTableEvent(IEventTopics.DOC_BEFORE_COMPLETE, MInvoice.Table_Name);
+		
+		registerTableEvent(IEventTopics.PO_BEFORE_CHANGE, MAsset.Table_Name);
+		registerTableEvent(IEventTopics.PO_BEFORE_NEW, MAsset.Table_Name);
+		
+		log.info("<<Asset DOC EVENT>> PLUGIN INITIALIZED");
+	}
+
+	@Override
+	protected void doHandleEvent(Event event) {
+		String msg = "";
+		String type = event.getTopic();
+		this.event = event;
+		setPo(getPO(event));
+		setTrxName(po.get_TrxName());
+		 // Product Asset
+		if ((po instanceof MProduct ) && (IEventTopics.PO_AFTER_NEW == type || IEventTopics.PO_AFTER_CHANGE == type) ){ 
+			log.info(" topic="+event.getTopic()+" po="+po);
+			MProduct prod = (MProduct)po;
+			msg = validateProductCategory(prod);
+		} else if ((po instanceof MInvoice) && (IEventTopics.DOC_BEFORE_COMPLETE == type)){	
+			MInvoice invoice = (MInvoice) po;	
+			createAssetAddition(invoice);
+		}else if ((po instanceof MAsset) && (IEventTopics.PO_BEFORE_CHANGE == type || IEventTopics.PO_BEFORE_NEW == type )){
+			msg = EventGeneral.ValidateAssetCode((MAsset) po);
+		}
+		
+		if (msg!=null && msg.length() > 0)
+			logEvent(event, getPO(event), msg);
+	}
+	
+	private String createAssetAddition(MInvoice invoice) {
+		// Only for Material Receipt
+		if(invoice.isSOTrx())
+			return "";
+		
+		int DocTypeAssetAddition = DB.getSQLValue(trxName, "Select C_DocType_ID From C_DocType where name = 'Fixed Assets Addition' AND AD_Client_ID = " + invoice.getAD_Client_ID());
+		
+		StringBuilder info = new StringBuilder();
+		
+		MInvoiceLine[] lines = invoice.getLines();
+		for(MInvoiceLine sLine : lines){
+			MProduct product = new MProduct(sLine.getCtx(), sLine.getM_Product_ID(), sLine.get_TrxName());
+			if ( product.getProductType().equals("A")){
+				if (product != null
+						&& sLine.getM_InOutLine_ID() > 0
+						&& sLine.getQtyInvoiced().signum() > 0
+						&& !invoice.isReversal())
+					{
+						log.fine("Asset");
+						info.append("@A_Asset_ID@: ");
+						int noAssets = sLine.getQtyInvoiced().intValue();
+						MAsset asset = null;
+						MClient client = new MClient(Env.getCtx(), Env.getAD_Client_ID(Env.getCtx()), sLine.get_TrxName());
+						for (int i = 0; i < noAssets; i++)
+						{
+							MAssetAddition assetAdd = new MAssetAddition(sLine.getCtx(), 0, sLine.get_TrxName());
+							assetAdd.setAD_Org_ID(sLine.getAD_Org_ID());
+							assetAdd.setPostingType(assetAdd.POSTINGTYPE_Actual);
+							// AH@20180820
+							assetAdd.setDescription(sLine.getDescription());
+							assetAdd.setA_SourceType(assetAdd.A_SOURCETYPE_Invoice);
+							assetAdd.setC_Invoice_ID(sLine.getC_Invoice_ID());
+							assetAdd.setC_InvoiceLine_ID(sLine.getC_InvoiceLine_ID());	
+							
+							assetAdd.setC_DocType_ID(DocTypeAssetAddition);
+							assetAdd.setA_CreateAsset(true);
+//							assetAdd.setDeltaUseLifeYears(1);
+//							assetAdd.setDeltaUseLifeYears_F(1);
+							
+							assetAdd.setM_InOutLine_ID(sLine.getM_InOutLine_ID());
+							assetAdd.setM_Product_ID(sLine.getM_Product_ID());
+							// remark by AH@kosta - remove ASI - 20160809
+							//assetAdd.setM_AttributeSetInstance_ID(sLine.getM_AttributeSetInstance_ID());
+							assetAdd.setA_QTY_Current(Env.ONE);
+							assetAdd.setLine(sLine.getLine());
+							assetAdd.setM_Locator_ID(sLine.getM_InOutLine().getM_Locator_ID());
+							assetAdd.set_ValueNoCheck("C_SalesRegion_ID", sLine.get_Value("C_SalesRegion_ID"));
+							assetAdd.set_ValueNoCheck("C_Project_ID", sLine.get_Value("C_Project_ID"));
+							assetAdd.set_ValueNoCheck("C_Activity_ID", sLine.get_Value("C_Activity_ID"));
+							
+							BigDecimal priceActual = sLine.getC_OrderLine().getPriceActual();
+							
+							// find linked order line to calculate total price
+							BigDecimal additionalPrice = DB.getSQLValueBD(trxName, "SELECT COALESCE(SUM(priceActual),0) from C_OrderLine WHERE Link_orderline_id=?", sLine.getC_OrderLine_ID());
+							if(additionalPrice.compareTo(Env.ZERO)>0)
+								priceActual = priceActual.add(additionalPrice);
+							
+							// Add PPN Value to Asset AH@20180618
+//							String sqlTax = " name like ? ";
+							//Add PPN from InvLine Sidik@20220715
+							String sqlTax = " C_Tax_ID = ? ";
+							MTax tax = new Query(sLine.getCtx(), MTax.Table_Name, sqlTax, sLine.get_TrxName())
+													.setClient_ID()
+													.setOnlyActiveRecords(true)
+//													.setParameters("PPN 10%")
+													.setParameters(sLine.getC_Tax_ID())
+													.first();
+							if ( tax != null ){
+								if (tax.getC_TaxCategory_ID() == 1000001){ // PPN / VAT
+									BigDecimal rateAmt = (tax.getRate().divide(Env.ONEHUNDRED)).add(Env.ONE);
+									BigDecimal newAmt = priceActual.multiply(rateAmt);
+									assetAdd.setAssetAmtEntered(newAmt);
+									assetAdd.setAssetSourceAmt(newAmt);
+									assetAdd.setAssetValueAmt(newAmt);
+								}
+								else {
+									assetAdd.setAssetAmtEntered(priceActual);
+									assetAdd.setAssetSourceAmt(priceActual);
+									assetAdd.setAssetValueAmt(priceActual);
+								}
+							}
+							else {
+								assetAdd.setAssetAmtEntered(priceActual);
+								assetAdd.setAssetSourceAmt(priceActual);
+								assetAdd.setAssetValueAmt(priceActual);
+							}							
+							
+							assetAdd.setC_Currency_ID(sLine.getC_OrderLine().getC_Currency_ID());
+							assetAdd.setDateDoc(new Timestamp(System.currentTimeMillis()));
+							assetAdd.setDateAcct(new Timestamp(System.currentTimeMillis()));
+							// Add by AH@kosta - 20170410 - Default Kurs BI
+							MConversionType conversion = new Query(sLine.getCtx(), MConversionType.Table_Name, " value like 'BI' ", sLine.get_TrxName())
+													.setOnlyActiveRecords(true)
+													.first();
+							assetAdd.setC_ConversionType_ID(conversion.getC_ConversionType_ID());
+							
+							String sqlAsset = "M_InOutLine_ID = ? ";
+							asset = new Query(assetAdd.getCtx(), MAsset.Table_Name, sqlAsset, assetAdd.get_TrxName())
+														.setParameters(sLine.getM_InOutLine_ID())
+														.setOrderBy("Updated ASC")
+														.first();
+							
+							if (asset!=null){
+								asset.setDescription(asset.getDescription()+" - Created Asset Addition");
+								asset.saveEx(); // Changed to other Asset
+							}
+							
+							MClient clie = new MClient(invoice.getCtx(), Env.getAD_Client_ID(invoice.getCtx()), trxName);
+							if (clie.getValue().equals("MSIG")){
+								if (assetAdd.getAssetValueAmt().compareTo(new BigDecimal(10000000)) > 0){
+									assetAdd.setA_CapvsExp(assetAdd.A_CAPVSEXP_Capital);
+								}else{
+									assetAdd.setA_CapvsExp(assetAdd.A_CAPVSEXP_Expense);
+								}
+							}
+							
+							
+							assetAdd.setA_Asset_ID(asset.getA_Asset_ID());
+							if (!assetAdd.save(sLine.get_TrxName()))
+							{
+								return "Cant generate Asset Addition..";
+							}
+							// Currency To
+//							int C_Currency_ID_To = MClient.get(sLine.getCtx(), sLine.getAD_Client_ID()).getAcctSchema().getC_Currency_ID();
+							
+//							BigDecimal rate = Env.ZERO; 
+//							
+//							rate = MConversionRate.getRate (sLine.getC_OrderLine().getC_Currency_ID(), C_Currency_ID_To,
+//									sLine.getM_InOut().getMovementDate(), conversion.getC_ConversionType_ID(),
+//									sLine.getAD_Client_ID(), sLine.getAD_Org_ID());
+//							
+//							if (rate == null ) throw new AdempiereException( "Rate tidak ada.!!");
+//							if ( rate.compareTo(Env.ZERO) <= 0) 
+//								throw new AdempiereException( "Tidak bisa generate Rate Pajak");
+							
+							
+						}
+					}	//	Asset
+					// sLine.setA_Asset_ID(asset.);
+			}
+		}
+		
+		return "";
+	}
+	
+	private String validateProductCategory(MProduct product){
+		String msg = "";
+		if (product != null){
+			MProductCategory prodCate = new MProductCategory(product.getCtx(), product.getM_Product_Category_ID(), trxName);
+			MAssetGroup assetGrup = new MAssetGroup(prodCate.getCtx(), prodCate.getA_Asset_Group_ID(), trxName);
+			if ( assetGrup.get_ID() == 0 && product.getProductType().equals("A")){
+				msg = "Asset Group must be filled in Product Category. Product Type Asset..!";
+			}
+		}
+		
+		return msg;
+	}
+	
+	
+	private Long dayToMiliseconds(int days){
+	    Long result = Long.valueOf(days * 24 * 60 * 60 * 1000);
+	    return result;
+	}
+	
+	private void logEvent (Event event, PO po, String msg) {
+		log.fine("EVENT MANAGER // "+event.getTopic()+" po="+po+" MESSAGE ="+msg);
+		throw new AdempiereException(msg);
+	}
+
+	/**
+	 * 
+	 * @param eventPO
+	 */
+	private void setPo(PO eventPO) {
+		 po = eventPO;
+	}
+	/**
+	 * 
+	 * @param get_TrxName
+	 */
+	private void setTrxName(String get_TrxName) {
+		trxName = get_TrxName;		
+	}
+}

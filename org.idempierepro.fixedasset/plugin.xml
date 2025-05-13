@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+   <extension
+         id="org.fixedasset.process.CompleteAssetAddition"
+         name="org.fixedasset.process.CompleteAssetAddition"
+         point="org.adempiere.base.Process">
+      <process
+            class="org.fixedasset.process.CompleteAssetAddition">
+      </process>
+   </extension>
+   <extension
+         id="org.fixedasset.process.UpdateBarcodeAsset"
+         name="org.fixedasset.process.UpdateBarcodeAsset"
+         point="org.adempiere.base.Process">
+      <process
+            class="org.fixedasset.process.UpdateBarcodeAsset">
+      </process>
+   </extension>
+   <extension
+         id="org.lease.process.GenerateSchedule"
+         name="org.lease.process.GenerateSchedule"
+         point="org.adempiere.base.Process">
+      <process
+            class="org.lease.process.GenerateSchedule">
+      </process>
+   </extension>   
+</plugin>
