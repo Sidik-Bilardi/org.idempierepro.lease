@@ -31,6 +31,7 @@ import org.fixedasset.model.MKstAssetActivateHeader;
 import org.fixedasset.model.MKstAssetDisposedHeader;
 import org.fixedasset.model.MKstAssetTransfer;
 import org.fixedasset.model.MKstAssetTransferLine;
+import org.lease.model.X_C_OrderComponent;
 import org.lease.model.X_C_OrderLineSch;
 
 
@@ -55,8 +56,8 @@ public class FixedAssetModelFactory implements IModelFactory {
  			 return MAssetStock.class;
  		 }
 		 
- 		else if (tableName.equals(X_C_OrderLineSch.Table_Name)){
-			 return X_C_OrderLineSch.class;
+ 		else if (tableName.equals(X_C_OrderComponent.Table_Name)){
+			 return X_C_OrderComponent.class;
 		 }
 		 
 		return null;
