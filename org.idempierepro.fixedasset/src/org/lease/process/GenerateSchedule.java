@@ -1,6 +1,8 @@
 package org.lease.process;
 
 import java.math.BigDecimal;
+import java.time.temporal.ChronoUnit;
+
 import java.sql.Timestamp;
 import java.text.DecimalFormat;
 import java.time.LocalDate;
@@ -50,7 +52,7 @@ public class GenerateSchedule extends SvrProcess{
 		Timestamp dateEnd = comp.getEndDate();
 		LocalDate Start = dateStart.toLocalDateTime().toLocalDate();
 		LocalDate End = dateEnd.toLocalDateTime().toLocalDate();
-		
+		LocalDate EndLoop = null;
 		for (LocalDate date = Start; date.isBefore(End); date = date.plusMonths(1)) {
 			MOrderLine line = new MOrderLine(getCtx(), 0, get_TrxName());
 	        line.setC_Order_ID(order.get_ID());
@@ -64,28 +66,56 @@ public class GenerateSchedule extends SvrProcess{
 	        LocalDate lastDay= firstDay.withDayOfMonth(
 	        		firstDay.getMonth().length(firstDay.isLeapYear()));
 	        Period diff = Period.between(firstDay, lastDay);
-	        int BillingDays = diff.getDays();
-	    	
+	        long BillingDays = ChronoUnit.DAYS.between(firstDay, lastDay);   // inclusive
+	        if(count > 0 ) {
+	        	BillingDays = BillingDays + 1;
+	        }
 	        YearMonth yearMonthEnd = YearMonth.of(End.getYear(), End.getMonth());
 	        
 	        YearMonth yearMonthObject = YearMonth.of(lastDay.getYear(), lastDay.getMonth());
 	        int daysInMonth = yearMonthObject.lengthOfMonth(); //28 
 	       
-	        if(yearMonthEnd == yearMonthObject) {
+	        if (yearMonthEnd.equals(yearMonthObject)) {
 	        	lastDay = End;
-	        	diff = Period.between(firstDay, lastDay);
-	        	daysInMonth = diff.getDays();
-	        }
+	        	BillingDays = ChronoUnit.DAYS.between(firstDay, lastDay) + 1;
+	         }
 	        String desc = firstDay+" ("+BillingDays+"/"+daysInMonth+") "+lastDay;
 	        line.setDescription(desc);
 	        Timestamp tsLastDay = Timestamp.valueOf(lastDay.atStartOfDay());
 	        Timestamp tsfirstDay = Timestamp.valueOf(firstDay.atStartOfDay());
 	        line.set_ValueOfColumn("EndDate", tsLastDay);
 	        line.set_ValueOfColumn("DateStart", tsfirstDay);
+	        line.set_ValueOfColumn("PlannedQty", new BigDecimal(daysInMonth));
+	        line.set_ValueOfColumn("ActualQty", new BigDecimal(BillingDays));
 	        if(line.save()) {
 	        	count++;
 	        }
+	        EndLoop = lastDay;
 	    }
+		
+		if(EndLoop.isBefore(End)) {
+			MOrderLine line = new MOrderLine(getCtx(), 0, get_TrxName());
+	        line.setC_Order_ID(order.get_ID());
+	        line.setM_Product_ID(comp.getM_Product_ID());
+	        line.setQty(Env.ONE);
+	        line.setPrice(Env.ONE);
+	        LocalDate firstDay = End.withDayOfMonth(1);
+	        YearMonth yearMonthEnd = YearMonth.of(End.getYear(), End.getMonth());
+	        int daysInMonth = yearMonthEnd.lengthOfMonth(); //28 
+		       
+	        long BillingDays = ChronoUnit.DAYS.between(EndLoop, End);   // inclusive
+	        String desc = firstDay+" ("+BillingDays+"/"+daysInMonth+") "+End;
+	        line.setDescription(desc);
+	        Timestamp tsLastDay = Timestamp.valueOf(firstDay.atStartOfDay());
+	        Timestamp tsfirstDay = Timestamp.valueOf(EndLoop.atStartOfDay());
+	        line.set_ValueOfColumn("EndDate", tsLastDay);
+	        line.set_ValueOfColumn("DateStart", tsfirstDay);
+	        line.set_ValueOfColumn("PlannedQty", new BigDecimal(daysInMonth));
+	        line.set_ValueOfColumn("ActualQty", new BigDecimal(BillingDays));
+	        if(line.save()) {
+	        	count++;
+	        }
+		}
 		
 		return "#"+count+" Generated ";
 	}
