@@ -1,6 +1,7 @@
 package org.lease.process;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.temporal.ChronoUnit;
 
 import java.sql.Timestamp;
@@ -48,6 +49,8 @@ public class GenerateSchedule extends SvrProcess{
 		int count = 0;
 		X_C_OrderComponent comp = new X_C_OrderComponent(getCtx(), p_ID, get_TrxName());
 		MOrder order = new MOrder(getCtx(), comp.getC_Order_ID(), get_TrxName());
+		BigDecimal AreaSize = (BigDecimal) order.get_Value("AreaSize");
+		String prdName = comp.getM_Product().getName();
 		Timestamp dateStart = comp.getDateStart();
 		Timestamp dateEnd = comp.getEndDate();
 		LocalDate Start = dateStart.toLocalDateTime().toLocalDate();
@@ -55,10 +58,10 @@ public class GenerateSchedule extends SvrProcess{
 		LocalDate EndLoop = null;
 		for (LocalDate date = Start; date.isBefore(End); date = date.plusMonths(1)) {
 			MOrderLine line = new MOrderLine(getCtx(), 0, get_TrxName());
-	        line.setC_Order_ID(order.get_ID());
+			line.setC_Order_ID(order.get_ID());
 	        line.setM_Product_ID(comp.getM_Product_ID());
 	        line.setQty(Env.ONE);
-	        line.setPrice(Env.ONE);
+	        
 	        LocalDate firstDay = date;
 	        if(count > 0 ) {
 	        	 firstDay= date.withDayOfMonth(1);
@@ -79,10 +82,15 @@ public class GenerateSchedule extends SvrProcess{
 	        	lastDay = End;
 	        	BillingDays = ChronoUnit.DAYS.between(firstDay, lastDay) + 1;
 	         }
-	        String desc = firstDay+" ("+BillingDays+"/"+daysInMonth+") "+lastDay;
+	        String desc = "Installment "+prdName+" "+firstDay+" s/d "+lastDay+" ("+BillingDays+"/"+daysInMonth+") ";
 	        line.setDescription(desc);
 	        Timestamp tsLastDay = Timestamp.valueOf(lastDay.atStartOfDay());
 	        Timestamp tsfirstDay = Timestamp.valueOf(firstDay.atStartOfDay());
+	        BigDecimal rate = (BigDecimal) comp.get_Value("Rate");
+	        BigDecimal ActualDays = new BigDecimal(BillingDays);
+	        BigDecimal MonthDays = new BigDecimal(daysInMonth);
+			BigDecimal priceentered = (rate.multiply(AreaSize)).multiply(ActualDays.divide(MonthDays, 20, RoundingMode.HALF_UP));
+			line.setPrice(priceentered);
 	        line.set_ValueOfColumn("EndDate", tsLastDay);
 	        line.set_ValueOfColumn("DateStart", tsfirstDay);
 	        line.set_ValueOfColumn("PlannedQty", new BigDecimal(daysInMonth));
@@ -102,13 +110,19 @@ public class GenerateSchedule extends SvrProcess{
 	        LocalDate firstDay = End.withDayOfMonth(1);
 	        YearMonth yearMonthEnd = YearMonth.of(End.getYear(), End.getMonth());
 	        int daysInMonth = yearMonthEnd.lengthOfMonth(); //28 
-		       
+	        BigDecimal rate = (BigDecimal) comp.get_Value("Rate");
+	        
 	        long BillingDays = ChronoUnit.DAYS.between(EndLoop, End);   // inclusive
-	        String desc = firstDay+" ("+BillingDays+"/"+daysInMonth+") "+End;
+	        String desc = "Installment "+prdName+" "+firstDay+" - "+End+" ("+BillingDays+"/"+daysInMonth+") ";
 	        line.setDescription(desc);
-	        Timestamp tsLastDay = Timestamp.valueOf(firstDay.atStartOfDay());
-	        Timestamp tsfirstDay = Timestamp.valueOf(EndLoop.atStartOfDay());
-	        line.set_ValueOfColumn("EndDate", tsLastDay);
+	        BigDecimal ActualDays = new BigDecimal(BillingDays);
+	        BigDecimal MonthDays = new BigDecimal(daysInMonth);
+			
+	        Timestamp tsfirstDay = Timestamp.valueOf(firstDay.atStartOfDay());
+	        Timestamp tsEndDay = Timestamp.valueOf(End.atStartOfDay());
+	        BigDecimal priceentered = (rate.multiply(AreaSize)).multiply(ActualDays.divide(MonthDays, 20, RoundingMode.HALF_UP));
+	        line.setPrice(priceentered);
+	        line.set_ValueOfColumn("EndDate", tsEndDay);
 	        line.set_ValueOfColumn("DateStart", tsfirstDay);
 	        line.set_ValueOfColumn("PlannedQty", new BigDecimal(daysInMonth));
 	        line.set_ValueOfColumn("ActualQty", new BigDecimal(BillingDays));
