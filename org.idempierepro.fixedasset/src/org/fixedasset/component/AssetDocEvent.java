@@ -37,7 +37,8 @@ import org.compiere.model.Query;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
-import org.fixedasset.process.EventGeneral;
+import org.lease.model.X_C_OrderComponent;
+import org.lease.process.EventGeneral;
 import org.osgi.service.event.Event;
 
 public class AssetDocEvent extends AbstractEventHandler{
@@ -55,6 +56,8 @@ public class AssetDocEvent extends AbstractEventHandler{
 		
 		registerTableEvent(IEventTopics.PO_BEFORE_CHANGE, MAsset.Table_Name);
 		registerTableEvent(IEventTopics.PO_BEFORE_NEW, MAsset.Table_Name);
+		
+		registerTableEvent(IEventTopics.PO_AFTER_NEW, X_C_OrderComponent.Table_Name); 
 		
 		log.info("<<Asset DOC EVENT>> PLUGIN INITIALIZED");
 	}
@@ -75,7 +78,9 @@ public class AssetDocEvent extends AbstractEventHandler{
 			MInvoice invoice = (MInvoice) po;	
 			createAssetAddition(invoice);
 		}else if ((po instanceof MAsset) && (IEventTopics.PO_BEFORE_CHANGE == type || IEventTopics.PO_BEFORE_NEW == type )){
-			msg = EventGeneral.ValidateAssetCode((MAsset) po);
+//			msg = EventGeneral.ValidateAssetCode((MAsset) po);
+		}else if ((po instanceof X_C_OrderComponent) && (IEventTopics.PO_AFTER_NEW == type)){	
+			EventGeneral.CreateComponentSchedule((X_C_OrderComponent) po);
 		}
 		
 		if (msg!=null && msg.length() > 0)
