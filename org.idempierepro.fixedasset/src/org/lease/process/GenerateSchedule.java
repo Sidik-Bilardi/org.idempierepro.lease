@@ -90,7 +90,7 @@ public class GenerateSchedule extends SvrProcess{
 	        BigDecimal ActualDays = new BigDecimal(BillingDays);
 	        BigDecimal MonthDays = new BigDecimal(daysInMonth);
 			BigDecimal priceentered = (rate.multiply(AreaSize)).multiply(ActualDays.divide(MonthDays, 20, RoundingMode.HALF_UP));
-			line.setPrice(priceentered);
+			line.setPrice(priceentered.setScale(2, RoundingMode.HALF_UP));
 	        line.set_ValueOfColumn("EndDate", tsLastDay);
 	        line.set_ValueOfColumn("DateStart", tsfirstDay);
 	        line.set_ValueOfColumn("PlannedQty", new BigDecimal(daysInMonth));
@@ -121,7 +121,7 @@ public class GenerateSchedule extends SvrProcess{
 	        Timestamp tsfirstDay = Timestamp.valueOf(firstDay.atStartOfDay());
 	        Timestamp tsEndDay = Timestamp.valueOf(End.atStartOfDay());
 	        BigDecimal priceentered = (rate.multiply(AreaSize)).multiply(ActualDays.divide(MonthDays, 20, RoundingMode.HALF_UP));
-	        line.setPrice(priceentered);
+	        line.setPrice(priceentered.setScale(2, RoundingMode.HALF_UP));
 	        line.set_ValueOfColumn("EndDate", tsEndDay);
 	        line.set_ValueOfColumn("DateStart", tsfirstDay);
 	        line.set_ValueOfColumn("PlannedQty", new BigDecimal(daysInMonth));
